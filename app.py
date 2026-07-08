@@ -32,36 +32,37 @@ if req_file and reg_file and ns_file and target_date:
     if st.button("Process Data", type="primary"):
         clean_target_date = target_date.strip()
         
-        # Split lines cleanly to clear raw OS carriage returns (\r, \n)
+        # Read files line-by-line to avoid carriage return errors (\r\n) from Google Sheets
         req_lines = req_file.getvalue().decode("utf-8-sig").splitlines()
         reg_lines = reg_file.getvalue().decode("utf-8-sig").splitlines()
         ns_lines = ns_file.getvalue().decode("utf-8-sig").splitlines()
 
-        # Parse CSV records into memory dict lists
+        # Parse initial raw collections
         raw_requests = list(csv.DictReader(req_lines))
         raw_reg_rows = list(csv.DictReader(reg_lines))
         raw_ns_rows = list(csv.DictReader(ns_lines))
 
-        # --- Data Cleaning: Strip whitespace from keys/values ---
+        # --- DATA HARDENING: Strip hidden whitespaces from every key and value ---
         requests = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_requests]
         reg_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_reg_rows]
         ns_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_ns_rows]
+        # -------------------------------------------------------------------------
 
-        # Verify header validation match
+        # FIXED HEADER ACCESS: Target index 0 row instead of the whole list object
         if requests:
             req_headers = list(requests[0].keys())
             if clean_target_date not in req_headers:
-                st.error(f"❌ '{clean_target_date}' not found in file headers. Available cleaned headers are: {req_headers}")
+                st.error(f"❌ '{clean_target_date}' not found in requests headers. Found columns: {req_headers}")
                 st.stop()
 
-        # Map lookups securely
+        # Map player indices safely
         registered = {row["player"]: row for row in reg_rows if "player" in row}
         noshows = {row["player"]: row for row in ns_rows if "player" in row}
         
-        # Grab target columns matrix cleanly from index 0
+        # FIXED WEEKS ACCESS: Targets row 0 dictionary keys safely
         reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
-        # Target players meeting asterisk criteria
+        # Find eligible players matching the dynamic date column selection
         eligible = {
             row["player"]
             for row in requests
@@ -90,23 +91,21 @@ if req_file and reg_file and ns_file and target_date:
                 if was_registered and was_noshow:
                     credits[player] -= 1
 
-        # Build final output matrix list
+        # Build output structure list
         output_rows = []
-        
-        # FIXED: Restored your exact lambda index [1] to sort correctly by points score
+        # Restored explicit metric sorting parameter using lambda score index targeting
         for player, score in sorted(credits.items(), key=lambda x: x[1], reverse=True):
             if player in eligible:
                 sub_pct = has_been_sub_pct(player, registered, reg_weeks, clean_target_date)
                 output_rows.append([player, score, sub_pct])
 
-        # Display results
+        # Display outcomes onto UI screen
         if not output_rows:
-            st.warning(f"⚠️ 0 players matched the conditions for column '{clean_target_date}'.")
-            if requests:
-                st.write("**Debug View - Total Found Eligible Set:**", len(eligible))
-                st.write("**Debug View - Sample Eligible Names:**", list(eligible)[:5])
+            st.warning(f"⚠️ 0 rows generated. Let's trace why:")
+            st.write(f"**Total rows parsed in file:** {len(requests)}")
+            st.write(f"**Total found matching asterisks (`*`):** {len(eligible)}")
         else:
-            st.success(f"🎉 Success! Found {len(output_rows)} eligible players.")
+            st.success(f"🎉 Success! Found {len(output_rows)} eligible players matching column '{clean_target_date}'.")
             
             # Show interactive data preview table right on the browser screen
             st.subheader("👀 Generated Data Preview")
