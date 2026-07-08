@@ -26,10 +26,9 @@ def has_been_sub_pct(player, registered, reg_weeks, date_to_skip):
     pct = (double_star_count / len(weeks_to_check)) * 100
     return f"{pct:.1f}%"
 
-# 3. Only show the processing button if all files are uploaded
+# 3. Process Only on Click
 if req_file and reg_file and ns_file and target_date:
     
-    # Restored the primary process button
     if st.button("Process Data", type="primary"):
         clean_target_date = target_date.strip()
         
@@ -38,52 +37,45 @@ if req_file and reg_file and ns_file and target_date:
         reg_text = io.StringIO(reg_file.getvalue().decode("utf-8-sig"))
         ns_text = io.StringIO(ns_file.getvalue().decode("utf-8-sig"))
 
-        # --- DATA HARDENING: Strip spaces from all keys/values inside the CSV data ---
-        raw_requests = list(csv.DictReader(req_text))
-        raw_reg_rows = list(csv.DictReader(reg_text))
-        raw_noshows_rows = list(csv.DictReader(ns_text))
+        # Parse CSVs immediately into standard lists of dictionaries
+        requests = list(csv.DictReader(req_text))
+        reg_rows = list(csv.DictReader(reg_text))
+        noshows_rows = list(csv.DictReader(ns_text))
         
-        # Normalize headers and spaces to prevent "0 matches found" errors
-        requests = [{k.strip(): v.strip() if v else "" for k, v in row.items()} for row in raw_requests]
-        reg_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items()} for row in raw_reg_rows]
-        noshows_list = [{k.strip(): v.strip() if v else "" for k, v in row.items()} for row in raw_noshows_rows]
-        # -----------------------------------------------------------------------------
-
-        credits = {}
-
-        # Guard clause: verify structural match safely
-        if requests:
-            headers = list(requests[0].keys())
-            if clean_target_date not in headers:
-                st.error(f"❌ '{clean_target_date}' not found in requests headers. Found columns: {headers}")
-                st.stop()
-
-        # Build structural dictionaries using your exact matching keys
-        registered = {row["player"]: row for row in reg_rows if "player" in row}
-        noshows = {row["player"]: row for row in noshows_list if "player" in row}
-        
-        # Pull registration weeks matrix safely using first index element
+        # Safely extract headers using your exact syntax strategy
+        req_headers = [k.strip() for k in requests[0].keys()] if requests else []
         reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
-        # Find eligible players matching the dynamic date column
-        eligible = {
-            row["player"]
-            for row in requests
-            if "player" in row and row.get(clean_target_date, "").startswith("*")
-        }
+        # Map players cleanly
+        registered = {row["player"].strip(): row for row in reg_rows if "player" in row}
+        noshows = {row["player"].strip(): row for row in noshows_rows if "player" in row}
 
-        # Calculate player credit structures
+        # Find eligible players matching the target column 
+        eligible = set()
+        for row in requests:
+            if "player" in row:
+                player_name = row["player"].strip()
+                # Clean keys on the fly to avoid trailing spaces matching failures
+                row_cleaned = {k.strip(): v.strip() for k, v in row.items() if v}
+                if row_cleaned.get(clean_target_date, "").startswith("*"):
+                    eligible.add(player_name)
+
+        credits = {}
+        # Calculate credits mirroring your exact original desktop loop logic
         for row in requests:
             if "player" not in row:
                 continue
-            player = row["player"]
+            player = row["player"].strip()
             credits[player] = 0
 
-            for week in row:
+            # Normalize keys for the inner loop evaluation
+            row_cleaned = {k.strip(): v.strip() for k, v in row.items() if v}
+
+            for week in row_cleaned:
                 if week in ("player", clean_target_date):
                     continue
 
-                requested = row[week].startswith("*")
+                requested = row_cleaned[week].startswith("*")
                 was_registered = registered.get(player, {}).get(week, "").startswith("*")
                 was_noshow = noshows.get(player, {}).get(week, "").startswith("*")
 
@@ -93,37 +85,44 @@ if req_file and reg_file and ns_file and target_date:
                 if was_registered and was_noshow:
                     credits[player] -= 1
 
-        # Write calculations into data buffer
-        output_buffer = io.StringIO()
-        writer = csv.writer(output_buffer)
-        writer.writerow(["player", "credits", "hasBeenSub"])
+        # Build output structure
+        output_rows = []
         
-        written_rows_count = 0
-        # Strict matching of your original lambda tuple index sorting logic
+        # Exact lambda value tracking syntax from original local terminal file
         for player, score in sorted(credits.items(), key=lambda x: x[1], reverse=True):
             if player in eligible:
-                writer.writerow([player, score, has_been_sub_pct(player, registered, reg_weeks, clean_target_date)])
-                written_rows_count += 1
+                sub_pct = has_been_sub_pct(player, registered, reg_weeks, clean_target_date)
+                output_rows.append([player, score, sub_pct])
 
-        # Render explicit state results to the browser window
-        if written_rows_count == 0:
-            st.warning(f"⚠️ Successfully calculated credits, but 0 players had a '*' in the '{clean_target_date}' column.")
-            st.write("**Debugging Info:** Check if your players actually have an asterisk under that column header in the uploaded file.")
+        # Render outputs directly onto web UI
+        if not output_rows:
+            st.warning(f"⚠️ Processed data successfully, but 0 rows matched. Let's trace why:")
+            st.write(f"**Target Column Looked For:** `{clean_target_date}`")
+            st.write(f"**Actual Headers Found in Requests CSV:** {req_headers}")
+            st.write(f"**Total unique players found in file:** {len(credits)}")
         else:
-            st.success(f"🎉 Success! Processed {written_rows_count} eligible players from the '{clean_target_date}' column.")
+            st.success(f"🎉 Success! Found {len(output_rows)} eligible players.")
             
-            # Save the layout variables directly inside Streamlit's session memory 
-            # so clicking download does not clear the page state!
-            st.session_state['csv_output'] = output_buffer.getvalue()
-            st.session_state['filename'] = f"DS_{clean_target_date.replace(' ', '-')}.csv"
+            # Show a data preview table right on the website screen!
+            st.subheader("👀 Data Preview")
+            st.table([{"Player": r[0], "Credits": r[1], "hasBeenSub": r[2]} for r in output_rows[:20]])
+            if len(output_rows) > 20:
+                st.caption(f"...and {len(output_rows) - 20} more rows.")
 
-    # 4. If data has been processed, render the download button safely outside the processing script execution loop
-    if 'csv_output' in st.session_state:
-        st.download_button(
-            label=f"⬇️ Download {st.session_state['filename']}",
-            data=st.session_state['csv_output'],
-            file_name=st.session_state['filename'],
-            mime="text/csv"
-        )
+            # Create final downloadable file
+            output_buffer = io.StringIO()
+            writer = csv.writer(output_buffer)
+            writer.writerow(["player", "credits", "hasBeenSub"])
+            writer.writerows(output_rows)
+
+            safe_filename = f"DS_{clean_target_date.replace(' ', '-')}.csv"
+
+            # Render Download button safely
+            st.download_button(
+                label=f"⬇️ Download {safe_filename}",
+                data=output_buffer.getvalue(),
+                file_name=safe_filename,
+                mime="text/csv"
+            )
 else:
     st.info("Please fill out the target column field and upload all three CSV files to begin.")
