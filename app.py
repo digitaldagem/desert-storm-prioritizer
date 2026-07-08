@@ -13,15 +13,15 @@ req_file = st.file_uploader("Upload DS_requests.csv", type=["csv"])
 reg_file = st.file_uploader("Upload DS_registrations.csv", type=["csv"])
 ns_file = st.file_uploader("Upload DS_noshows.csv", type=["csv"])
 
-def has_been_sub_pct(player, registered, reg_weeks, date_to_skip):
+def has_been_sub_pct(player, registered, reg_weeks):
     """Percentage of weeks where the player has '**' in DS_registrations.csv."""
-    weeks_to_check = [w for w in reg_weeks if w != date_to_skip]
+    weeks_to_check = [w for w in reg_weeks if w != "July 10"]
     if not weeks_to_check:
         return "0.0%"
     player_reg = registered.get(player, {})
     double_star_count = sum(
         1 for week in weeks_to_check
-        if str(player_reg.get(week, "")).startswith("**")
+        if player_reg.get(week, "").startswith("**")
     )
     pct = (double_star_count / len(weeks_to_check)) * 100
     return f"{pct:.1f}%"
@@ -32,47 +32,33 @@ if req_file and reg_file and ns_file and target_date:
     if st.button("Process Data", type="primary"):
         clean_target_date = target_date.strip()
         
-        # Split lines cleanly to clear raw OS carriage returns (\r, \n)
+        # FIX: splitlines() clears hidden carriage returns (\r) from Google Sheets
         req_lines = req_file.getvalue().decode("utf-8-sig").splitlines()
         reg_lines = reg_file.getvalue().decode("utf-8-sig").splitlines()
         ns_lines = ns_file.getvalue().decode("utf-8-sig").splitlines()
 
-        # Parse initial raw collections
-        raw_requests = list(csv.DictReader(req_lines))
-        raw_reg_rows = list(csv.DictReader(reg_lines))
-        raw_ns_rows = list(csv.DictReader(ns_lines))
+        credits = {}
 
-        # Data Cleaning: Strip hidden whitespaces from every key and value
-        requests = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_requests]
-        reg_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_reg_rows]
-        ns_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_ns_rows]
-
-        # FIXED: Correctly targets index 0 of the list to pull the dictionary keys
-        if requests:
-            req_headers = list(requests[0].keys())
-            if clean_target_date not in req_headers:
-                st.error(f"❌ '{clean_target_date}' not found in requests headers. Found columns: {req_headers}")
-                st.stop()
-
-        # Map player indices safely
-        registered = {row["player"]: row for row in reg_rows if "player" in row}
-        noshows = {row["player"]: row for row in ns_rows if "player" in row}
+        # Parse normalized text lines into clean dict structures
+        requests = list(csv.DictReader(req_lines))
+        reg_rows = list(csv.DictReader(reg_lines))
         
-        # FIXED: Correctly targets index 0 of the registration rows to fetch weeks
+        # Standard clean mapping matching your original script strategy
+        registered = {row["player"]: row for row in reg_rows if "player" in row}
+        noshows = {row["player"]: row for row in csv.DictReader(ns_lines) if "player" in row}
+
+        # Safe header lookup via row index 0
         reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
-        # Find eligible players matching the dynamic date column selection
+        # Find eligible players matching the dynamic target column selection
         eligible = {
             row["player"]
             for row in requests
-            if "player" in row and row.get(clean_target_date, "").startswith("*")
+            if row.get(clean_target_date, "").startswith("*")
         }
 
-        credits = {}
-        # Calculate credits mirroring your exact original desktop loop logic
+        # Calculate credits matching your exact desktop loop logic
         for row in requests:
-            if "player" not in row:
-                continue
             player = row["player"]
             credits[player] = 0
 
@@ -90,27 +76,16 @@ if req_file and reg_file and ns_file and target_date:
                 if was_registered and was_noshow:
                     credits[player] -= 1
 
-        # Build output structure list
+        # Build output list using your exact sorting key
         output_rows = []
-        # FIXED: Restored your exact desktop sorting logic targeting index 1 for point values
         for player, score in sorted(credits.items(), key=lambda x: x[1], reverse=True):
             if player in eligible:
-                sub_pct = has_been_sub_pct(player, registered, reg_weeks, clean_target_date)
-                output_rows.append([player, score, sub_pct])
+                output_rows.append([player, score, has_been_sub_pct(player, registered, reg_weeks)])
 
-        # Display outcomes onto UI screen
         if not output_rows:
-            st.warning(f"⚠️ 0 rows generated. Let's trace why:")
-            st.write(f"**Total rows parsed in file:** {len(requests)}")
-            st.write(f"**Total found matching asterisks (`*`):** {len(eligible)}")
+            st.warning(f"⚠️ 0 players had a '*' in the '{clean_target_date}' column.")
         else:
-            st.success(f"🎉 Success! Found {len(output_rows)} eligible players matching column '{clean_target_date}'.")
-            
-            # Show data preview table on the screen
-            st.subheader("👀 Generated Data Preview")
-            st.table([{"Player": r[0], "Credits": r[1], "hasBeenSub": r[2]} for r in output_rows[:20]])
-            if len(output_rows) > 20:
-                st.caption(f"...and {len(output_rows) - 20} more rows.")
+            st.success(f"🎉 Success! Found {len(output_rows)} eligible players.")
 
             # Create final downloadable file stream string
             output_buffer = io.StringIO()
@@ -120,7 +95,6 @@ if req_file and reg_file and ns_file and target_date:
 
             safe_filename = f"DS_{clean_target_date.replace(' ', '-')}.csv"
 
-            # Render Download button safely outside internal loops
             st.download_button(
                 label=f"⬇️ Download {safe_filename}",
                 data=output_buffer.getvalue(),
