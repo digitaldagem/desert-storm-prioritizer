@@ -2,13 +2,23 @@ import csv
 import io
 import streamlit as st
 
-st.set_page_config(page_title="DS Credit Calculator")
+st.set_page_config(page_title="DS Credit Calculator", page_icon="⚽")
 
-st.title("DS Credit Calculator")
+st.title("⚽ DS Credit Calculator")
+
+st.write(
+    """
+Upload these three files (in any order):
+
+- **DS_requests.csv**
+- **DS_registrations.csv**
+- **DS_noshows.csv**
+"""
+)
 
 
 def read_csv(uploaded_file):
-    """Read a CSV uploaded to Streamlit, automatically detecting the delimiter."""
+    """Read an uploaded CSV, automatically detecting delimiter."""
     text = uploaded_file.getvalue().decode("utf-8-sig")
 
     try:
@@ -17,193 +27,192 @@ def read_csv(uploaded_file):
     except Exception:
         delimiter = ","
 
-    rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
-
-    return rows, delimiter
+    return list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
 
 
-requests_file = st.file_uploader(
-    "Upload DS_requests.csv",
+# -----------------------
+# Upload files
+# -----------------------
+
+uploaded_files = st.file_uploader(
+    "Upload the three CSV files",
     type="csv",
+    accept_multiple_files=True,
 )
 
-registrations_file = st.file_uploader(
-    "Upload DS_registrations.csv",
-    type="csv",
-)
+if not uploaded_files:
+    st.stop()
 
-noshows_file = st.file_uploader(
-    "Upload DS_noshows.csv",
-    type="csv",
-)
+files = {f.name: f for f in uploaded_files}
 
-if requests_file and registrations_file and noshows_file:
+required = [
+    "DS_requests.csv",
+    "DS_registrations.csv",
+    "DS_noshows.csv",
+]
 
-    requests, req_delim = read_csv(requests_file)
-    reg_rows, reg_delim = read_csv(registrations_file)
-    noshow_rows, ns_delim = read_csv(noshows_file)
+missing = [f for f in required if f not in files]
 
-    if not requests:
-        st.error("DS_requests.csv appears to be empty.")
-        st.stop()
-
-    st.write("Detected delimiters:")
-    st.write(
-        {
-            "Requests": req_delim,
-            "Registrations": reg_delim,
-            "No Shows": ns_delim,
-        }
+if missing:
+    st.warning(
+        "Still waiting for:\n\n" +
+        "\n".join(f"- {m}" for m in missing)
     )
+    st.stop()
 
-    st.write("First row of requests:")
-    st.write(requests[0])
+st.success("All required files uploaded.")
 
-    week_columns = [
-        c.strip()
-        for c in requests[0].keys()
-        if c.strip().lower() != "player"
-    ]
+requests = read_csv(files["DS_requests.csv"])
+reg_rows = read_csv(files["DS_registrations.csv"])
+noshow_rows = read_csv(files["DS_noshows.csv"])
 
-    week = st.selectbox(
-        "Week",
-        week_columns,
-        index=len(week_columns) - 1,
-    )
+if not requests:
+    st.error("DS_requests.csv is empty.")
+    st.stop()
 
-    registered = {
-        row["player"].strip(): row
-        for row in reg_rows
-    }
+registered = {
+    row["player"].strip(): row
+    for row in reg_rows
+}
 
-    noshows = {
-        row["player"].strip(): row
-        for row in noshow_rows
-    }
+noshows = {
+    row["player"].strip(): row
+    for row in noshow_rows
+}
 
-    reg_weeks = [
-        c.strip()
-        for c in reg_rows[0].keys()
-        if c.strip().lower() != "player"
-    ]
+week_columns = [
+    c.strip()
+    for c in requests[0].keys()
+    if c.strip() != "player"
+]
 
-    credits = {}
+week = st.selectbox(
+    "Select the week",
+    week_columns,
+    index=len(week_columns) - 1,
+)
 
-    eligible = set()
+credits = {}
 
-    for row in requests:
-        player = row["player"].strip()
+eligible = {
+    row["player"].strip()
+    for row in requests
+    if row.get(week, "").strip().startswith("*")
+}
 
-        if row.get(week, "").strip().startswith("*"):
-            eligible.add(player)
+st.info(f"{len(eligible)} eligible players")
 
-    st.write(f"Eligible players: {len(eligible)}")
+reg_weeks = [
+    c.strip()
+    for c in reg_rows[0].keys()
+    if c.strip() != "player"
+]
 
-    for row in requests:
+for row in requests:
 
-        player = row["player"].strip()
+    player = row["player"].strip()
+    credits[player] = 0
 
-        credits[player] = 0
+    for current_week in week_columns:
 
-        for current_week in week_columns:
+        if current_week == week:
+            continue
 
-            if current_week == week:
-                continue
+        requested = row.get(current_week, "").strip().startswith("*")
 
-            requested = row.get(current_week, "").strip().startswith("*")
-
-            was_registered = (
-                registered.get(player, {})
-                .get(current_week, "")
-                .strip()
-                .startswith("*")
-            )
-
-            was_noshow = (
-                noshows.get(player, {})
-                .get(current_week, "")
-                .strip()
-                .startswith("*")
-            )
-
-            if requested and not was_registered:
-                credits[player] += 1
-
-            if was_registered and was_noshow:
-                credits[player] -= 1
-
-    def has_been_sub_pct(player):
-
-        weeks = [
-            w
-            for w in reg_weeks
-            if w != week
-        ]
-
-        if not weeks:
-            return "0.0%"
-
-        reg = registered.get(player, {})
-
-        subs = sum(
-            1
-            for w in weeks
-            if reg.get(w, "").strip().startswith("**")
+        was_registered = (
+            registered.get(player, {})
+            .get(current_week, "")
+            .strip()
+            .startswith("*")
         )
 
-        return f"{100 * subs / len(weeks):.1f}%"
+        was_noshow = (
+            noshows.get(player, {})
+            .get(current_week, "")
+            .strip()
+            .startswith("*")
+        )
 
-    output = io.StringIO()
-    writer = csv.writer(output)
+        if requested and not was_registered:
+            credits[player] += 1
+
+        if was_registered and was_noshow:
+            credits[player] -= 1
+
+
+def has_been_sub_pct(player):
+
+    weeks = [
+        w
+        for w in reg_weeks
+        if w != week
+    ]
+
+    if not weeks:
+        return "0.0%"
+
+    player_reg = registered.get(player, {})
+
+    subs = sum(
+        1
+        for w in weeks
+        if player_reg.get(w, "").strip().startswith("**")
+    )
+
+    return f"{100 * subs / len(weeks):.1f}%"
+
+
+output = io.StringIO()
+writer = csv.writer(output)
+
+writer.writerow(
+    [
+        "player",
+        "credits",
+        "hasBeenSub",
+    ]
+)
+
+preview = []
+
+for player, score in sorted(
+    credits.items(),
+    key=lambda x: x[1],
+    reverse=True,
+):
+
+    if player not in eligible:
+        continue
+
+    pct = has_been_sub_pct(player)
 
     writer.writerow(
         [
-            "player",
-            "credits",
-            "hasBeenSub",
+            player,
+            score,
+            pct,
         ]
     )
 
-    preview = []
-    rows_written = 0
+    preview.append(
+        {
+            "player": player,
+            "credits": score,
+            "hasBeenSub": pct,
+        }
+    )
 
-    for player, score in sorted(
-        credits.items(),
-        key=lambda x: x[1],
-        reverse=True,
-    ):
+st.success(f"Generated {len(preview)} rows.")
 
-        if player not in eligible:
-            continue
-
-        pct = has_been_sub_pct(player)
-
-        writer.writerow(
-            [
-                player,
-                score,
-                pct,
-            ]
-        )
-
-        preview.append(
-            {
-                "player": player,
-                "credits": score,
-                "hasBeenSub": pct,
-            }
-        )
-
-        rows_written += 1
-
-    st.write(f"Rows written: {rows_written}")
-
-    if preview:
-        st.dataframe(preview, use_container_width=True)
+if preview:
+    st.dataframe(preview, use_container_width=True)
 
     st.download_button(
-        "Download CSV",
+        "📥 Download Results CSV",
         output.getvalue(),
         file_name=f"DS_{week.replace(' ', '-')}.csv",
         mime="text/csv",
     )
+else:
+    st.warning("No eligible players were found for the selected week.")
