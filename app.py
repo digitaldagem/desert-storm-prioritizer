@@ -32,36 +32,42 @@ if req_file and reg_file and ns_file and target_date:
     if st.button("Process Data", type="primary"):
         clean_target_date = target_date.strip()
         
-        # Stream text exactly how open() handles local files
-        req_text = io.StringIO(req_file.getvalue().decode("utf-8-sig"))
-        reg_text = io.StringIO(reg_file.getvalue().decode("utf-8-sig"))
-        ns_text = io.StringIO(ns_file.getvalue().decode("utf-8-sig"))
+        # FIXED: splitlines() reads all OS variants (\r, \n, \r\n) cleanly and translates them 
+        req_lines = req_file.getvalue().decode("utf-8-sig").splitlines()
+        reg_lines = reg_file.getvalue().decode("utf-8-sig").splitlines()
+        ns_lines = ns_file.getvalue().decode("utf-8-sig").splitlines()
 
         credits = {}
 
-        # Parse data files into lists
-        requests = list(csv.DictReader(req_text))
-        reg_rows = list(csv.DictReader(reg_text))
-        registered = {row["player"]: row for row in reg_rows}
-        noshows = {row["player"]: row for row in csv.DictReader(ns_text)}
+        # Parse normalized text streams into clean lists
+        requests = list(csv.DictReader(req_lines))
+        reg_rows = list(csv.DictReader(reg_lines))
+        registered = {row["player"].strip(): row for row in reg_rows if "player" in row}
+        noshows = {row["player"].strip(): row for row in csv.DictReader(ns_lines) if "player" in row}
 
-        # FIXED SYNTAX: Restored your exact bracket lookup to access row dictionaries
-        reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
+        # Safe syntax strategy matching your local script layout 
+        reg_weeks = [col.strip() for col in reg_rows[0].keys() if col.strip() != "player"] if reg_rows else []
 
         # Find eligible players matching the dynamic target column selection
-        eligible = {
-            row["player"]
-            for row in requests
-            if row.get(clean_target_date, "").startswith("*")
-        }
+        eligible = set()
+        for row in requests:
+            if "player" in row:
+                player_name = row["player"].strip()
+                # Clean up trailing line symbols from the cell text on the fly
+                cell_value = str(row.get(clean_target_date, "")).strip()
+                if cell_value.startswith("*"):
+                    eligible.add(player_name)
 
         # Calculate credits matching your exact desktop loop logic
         for row in requests:
-            player = row["player"]
+            if "player" not in row:
+                continue
+            player = row["player"].strip()
             credits[player] = 0
 
             for week in row:
-                if week in ("player", clean_target_date):
+                week_clean = week.strip()
+                if week_clean in ("player", clean_target_date):
                     continue
 
                 requested = row[week].startswith("*")
@@ -83,10 +89,8 @@ if req_file and reg_file and ns_file and target_date:
         # Display outcome status or preview to the web screen
         if not output_rows:
             st.warning(f"⚠️ 0 players had a '*' in the '{clean_target_date}' column.")
-            # Quick troubleshooting debug log visible only if it misfires
             if requests:
-                st.write("**Debug Info - First row columns:**", list(requests[0].keys()))
-                st.write("**Debug Info - First row values:**", requests[0])
+                st.write("**Debug - Row 0 parsed correctly now:**", requests[0])
         else:
             st.success(f"🎉 Success! Found {len(output_rows)} eligible players.")
             
