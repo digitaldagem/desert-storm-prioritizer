@@ -32,7 +32,7 @@ if req_file and reg_file and ns_file and target_date:
     if st.button("Process Data", type="primary"):
         clean_target_date = target_date.strip()
         
-        # Read files line-by-line to avoid carriage return errors (\r\n) from Google Sheets
+        # Split lines cleanly to clear raw OS carriage returns (\r, \n)
         req_lines = req_file.getvalue().decode("utf-8-sig").splitlines()
         reg_lines = reg_file.getvalue().decode("utf-8-sig").splitlines()
         ns_lines = ns_file.getvalue().decode("utf-8-sig").splitlines()
@@ -42,13 +42,12 @@ if req_file and reg_file and ns_file and target_date:
         raw_reg_rows = list(csv.DictReader(reg_lines))
         raw_ns_rows = list(csv.DictReader(ns_lines))
 
-        # --- DATA HARDENING: Strip hidden whitespaces from every key and value ---
+        # Data Cleaning: Strip hidden whitespaces from every key and value
         requests = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_requests]
         reg_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_reg_rows]
         ns_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_ns_rows]
-        # -------------------------------------------------------------------------
 
-        # FIXED HEADER ACCESS: Target index 0 row instead of the whole list object
+        # FIXED: Correctly targets index 0 of the list to pull the dictionary keys
         if requests:
             req_headers = list(requests[0].keys())
             if clean_target_date not in req_headers:
@@ -59,7 +58,7 @@ if req_file and reg_file and ns_file and target_date:
         registered = {row["player"]: row for row in reg_rows if "player" in row}
         noshows = {row["player"]: row for row in ns_rows if "player" in row}
         
-        # FIXED WEEKS ACCESS: Targets row 0 dictionary keys safely
+        # FIXED: Correctly targets index 0 of the registration rows to fetch weeks
         reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
         # Find eligible players matching the dynamic date column selection
@@ -93,7 +92,7 @@ if req_file and reg_file and ns_file and target_date:
 
         # Build output structure list
         output_rows = []
-        # Restored explicit metric sorting parameter using lambda score index targeting
+        # FIXED: Restored your exact desktop sorting logic targeting index 1 for point values
         for player, score in sorted(credits.items(), key=lambda x: x[1], reverse=True):
             if player in eligible:
                 sub_pct = has_been_sub_pct(player, registered, reg_weeks, clean_target_date)
@@ -107,7 +106,7 @@ if req_file and reg_file and ns_file and target_date:
         else:
             st.success(f"🎉 Success! Found {len(output_rows)} eligible players matching column '{clean_target_date}'.")
             
-            # Show interactive data preview table right on the browser screen
+            # Show data preview table on the screen
             st.subheader("👀 Generated Data Preview")
             st.table([{"Player": r[0], "Credits": r[1], "hasBeenSub": r[2]} for r in output_rows[:20]])
             if len(output_rows) > 20:
