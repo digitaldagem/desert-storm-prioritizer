@@ -41,16 +41,16 @@ if req_file and reg_file and ns_file and target_date:
         requests = list(csv.DictReader(req_text))
         reg_rows = list(csv.DictReader(reg_text))
         
-        # Guard clause: verify structural match
+        # Guard clause: verify structural match safely using the first list index
         if requests:
-            headers = list(requests.keys())
+            headers = list(requests[0].keys())
             if clean_target_date not in headers:
                 st.error(f"❌ '{clean_target_date}' not found in requests file headers: {headers}")
                 st.stop()
 
         registered = {row["player"]: row for row in reg_rows}
         noshows = {row["player"]: row for row in csv.DictReader(ns_text)}
-        reg_weeks = [col for col in reg_rows.keys() if col != "player"] if reg_rows else []
+        reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
         # Find eligible players matching the specific target column (e.g., July 10)
         eligible = {
@@ -85,8 +85,8 @@ if req_file and reg_file and ns_file and target_date:
         writer.writerow(["player", "credits", "hasBeenSub"])
         
         written_rows_count = 0
-        # Tracks the index [1] (the credit score) to properly sort highest to lowest
-        for player, score in sorted(credits.items(), key=lambda x: x, reverse=True):
+        # Tracks index [1] (the credit score) to properly sort highest to lowest
+        for player, score in sorted(credits.items(), key=lambda x: x[1], reverse=True):
             if player in eligible:
                 writer.writerow([player, score, has_been_sub_pct(player, registered, reg_weeks, clean_target_date)])
                 written_rows_count += 1
