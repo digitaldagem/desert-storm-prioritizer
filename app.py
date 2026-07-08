@@ -14,6 +14,7 @@ reg_file = st.file_uploader("Upload DS_registrations.csv", type=["csv"])
 ns_file = st.file_uploader("Upload DS_noshows.csv", type=["csv"])
 
 def has_been_sub_pct(player, registered, reg_weeks, date_to_skip):
+    """Percentage of weeks where the player has '**' in DS_registrations.csv."""
     weeks_to_check = [w for w in reg_weeks if w != date_to_skip]
     if not weeks_to_check:
         return "0.0%"
@@ -31,7 +32,7 @@ if req_file and reg_file and ns_file and target_date:
     if st.button("Process Data", type="primary"):
         clean_target_date = target_date.strip()
         
-        # Read from memory with UTF-8-SIG to avoid Excel encoding artifacts
+        # Read from memory using utf-8-sig to skip any hidden Excel artifacts
         req_text = io.StringIO(req_file.getvalue().decode("utf-8-sig"))
         reg_text = io.StringIO(reg_file.getvalue().decode("utf-8-sig"))
         ns_text = io.StringIO(ns_file.getvalue().decode("utf-8-sig"))
@@ -41,7 +42,7 @@ if req_file and reg_file and ns_file and target_date:
         requests = list(csv.DictReader(req_text))
         reg_rows = list(csv.DictReader(reg_text))
         
-        # Guard clause: verify structural match safely using the first list index
+        # Guard clause: verify structural match using exact indexing syntax
         if requests:
             headers = list(requests[0].keys())
             if clean_target_date not in headers:
@@ -50,9 +51,11 @@ if req_file and reg_file and ns_file and target_date:
 
         registered = {row["player"]: row for row in reg_rows}
         noshows = {row["player"]: row for row in csv.DictReader(ns_text)}
+        
+        # FIXED: Using your exact syntax to grab columns safely
         reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
-        # Find eligible players matching the specific target column (e.g., July 10)
+        # Find eligible players matching the user input column
         eligible = {
             row["player"]
             for row in requests
@@ -65,7 +68,6 @@ if req_file and reg_file and ns_file and target_date:
             credits[player] = 0
 
             for week in row:
-                # Dynamically ignores 'player' and whatever date was input (e.g., 'July 10')
                 if week in ("player", clean_target_date):
                     continue
 
@@ -85,14 +87,14 @@ if req_file and reg_file and ns_file and target_date:
         writer.writerow(["player", "credits", "hasBeenSub"])
         
         written_rows_count = 0
-        # Tracks index [1] (the credit score) to properly sort highest to lowest
+        # FIXED: Restored your exact sorting logic using lambda index 1 for the scores
         for player, score in sorted(credits.items(), key=lambda x: x[1], reverse=True):
             if player in eligible:
                 writer.writerow([player, score, has_been_sub_pct(player, registered, reg_weeks, clean_target_date)])
                 written_rows_count += 1
 
         if written_rows_count == 0:
-            st.warning(f"⚠️ Successfully calculated credits, but 0 players had a '*' in the '{clean_target_date}' column.")
+            st.warning(f"⚠️ Processed data successfully, but 0 players had an asterisk in the '{clean_target_date}' column.")
         else:
             st.success(f"🎉 Success! Processed {written_rows_count} eligible players from the '{clean_target_date}' column.")
 
