@@ -3,7 +3,7 @@ import io
 import streamlit as st
 
 st.title("Player Credits & Eligibility Processor")
-st.write("Upload your CSV files and click 'Process Data' to generate your report.")
+st.write("Upload your CSV files and select your target date to generate the report.")
 
 # 1. User Input for the Target Column
 target_date = st.text_input("Target Date Column:", value="July 10")
@@ -13,9 +13,9 @@ req_file = st.file_uploader("Upload DS_requests.csv", type=["csv"])
 reg_file = st.file_uploader("Upload DS_registrations.csv", type=["csv"])
 ns_file = st.file_uploader("Upload DS_noshows.csv", type=["csv"])
 
-def has_been_sub_pct(player, registered, reg_weeks, date_to_skip):
+def has_been_sub_pct(player, registered, reg_weeks):
     """Percentage of weeks where the player has '**' in DS_registrations.csv."""
-    weeks_to_check = [w for w in reg_weeks if w != date_to_skip]
+    weeks_to_check = [w for w in reg_weeks if w != "July 10"]
     if not weeks_to_check:
         return "0.0%"
     player_reg = registered.get(player, {})
@@ -26,43 +26,36 @@ def has_been_sub_pct(player, registered, reg_weeks, date_to_skip):
     pct = (double_star_count / len(weeks_to_check)) * 100
     return f"{pct:.1f}%"
 
-# 3. Process Only on Click
+# 3. Process Data
 if req_file and reg_file and ns_file and target_date:
     
     if st.button("Process Data", type="primary"):
         clean_target_date = target_date.strip()
         
-        # Read from memory using utf-8-sig to clear hidden Excel symbols
+        # Stream text exactly how open() handles local files
         req_text = io.StringIO(req_file.getvalue().decode("utf-8-sig"))
         reg_text = io.StringIO(reg_file.getvalue().decode("utf-8-sig"))
         ns_text = io.StringIO(ns_file.getvalue().decode("utf-8-sig"))
 
         credits = {}
 
-        # Read directly using your original approach
+        # Parse data files into lists
         requests = list(csv.DictReader(req_text))
         reg_rows = list(csv.DictReader(reg_text))
-        
-        # Safe extraction pointing directly to index 0 of the lists
-        req_headers = list(requests[0].keys()) if requests else []
-        if clean_target_date not in req_headers:
-            st.error(f"❌ '{clean_target_date}' not found in requests headers. Found columns: {req_headers}")
-            st.stop()
+        registered = {row["player"]: row for row in reg_rows}
+        noshows = {row["player"]: row for row in csv.DictReader(ns_text)}
 
-        registered = {row["player"]: row for row in reg_rows if "player" in row}
-        noshows = {row["player"]: row for row in csv.DictReader(ns_text) if "player" in row}
-        
-        # Exact syntax from your original terminal file to fetch weeks matrix cleanly
+        # FIXED SYNTAX: Restored your exact bracket lookup to access row dictionaries
         reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
-        # Find eligible players matching the exact target date column string
+        # Find eligible players matching the dynamic target column selection
         eligible = {
             row["player"]
             for row in requests
             if row.get(clean_target_date, "").startswith("*")
         }
 
-        # Calculate credits mirroring your exact original desktop loop logic
+        # Calculate credits matching your exact desktop loop logic
         for row in requests:
             player = row["player"]
             credits[player] = 0
@@ -81,28 +74,27 @@ if req_file and reg_file and ns_file and target_date:
                 if was_registered and was_noshow:
                     credits[player] -= 1
 
-        # Build final output layout array
+        # Build output matrix list
         output_rows = []
-        
-        # Restored your exact desktop sorting parameter matching lambda index [1]
         for player, score in sorted(credits.items(), key=lambda x: x[1], reverse=True):
             if player in eligible:
-                sub_pct = has_been_sub_pct(player, registered, reg_weeks, clean_target_date)
-                output_rows.append([player, score, sub_pct])
+                output_rows.append([player, score, has_been_sub_pct(player, registered, reg_weeks)])
 
-        # Render outputs directly onto web UI
+        # Display outcome status or preview to the web screen
         if not output_rows:
             st.warning(f"⚠️ 0 players had a '*' in the '{clean_target_date}' column.")
+            # Quick troubleshooting debug log visible only if it misfires
+            if requests:
+                st.write("**Debug Info - First row columns:**", list(requests[0].keys()))
+                st.write("**Debug Info - First row values:**", requests[0])
         else:
             st.success(f"🎉 Success! Found {len(output_rows)} eligible players.")
             
             # Show interactive data preview table right on the browser screen
             st.subheader("👀 Generated Data Preview")
             st.table([{"Player": r[0], "Credits": r[1], "hasBeenSub": r[2]} for r in output_rows[:20]])
-            if len(output_rows) > 20:
-                st.caption(f"...and {len(output_rows) - 20} more rows.")
 
-            # Create final downloadable file stream
+            # Create final downloadable file stream string
             output_buffer = io.StringIO()
             writer = csv.writer(output_buffer)
             writer.writerow(["player", "credits", "hasBeenSub"])
