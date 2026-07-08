@@ -6,122 +6,103 @@ st.set_page_config(page_title="DS Credit Calculator")
 
 st.title("DS Credit Calculator")
 
-st.write(
-    "Upload the three CSV files, choose the target week, then download the results."
-)
+
+def read_csv(uploaded_file):
+    """Read a CSV uploaded to Streamlit, automatically detecting the delimiter."""
+    text = uploaded_file.getvalue().decode("utf-8-sig")
+
+    try:
+        dialect = csv.Sniffer().sniff(text[:5000], delimiters=",;\t")
+        delimiter = dialect.delimiter
+    except Exception:
+        delimiter = ","
+
+    rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
+
+    return rows, delimiter
+
 
 requests_file = st.file_uploader(
-    "DS_requests.csv",
+    "Upload DS_requests.csv",
     type="csv",
-    key="requests",
 )
 
 registrations_file = st.file_uploader(
-    "DS_registrations.csv",
+    "Upload DS_registrations.csv",
     type="csv",
-    key="registrations",
 )
 
 noshows_file = st.file_uploader(
-    "DS_noshows.csv",
+    "Upload DS_noshows.csv",
     type="csv",
-    key="noshows",
 )
 
 if requests_file and registrations_file and noshows_file:
 
-    # -----------------------------
-    # Read CSVs
-    # -----------------------------
-    requests = list(
-        csv.DictReader(
-            io.StringIO(requests_file.getvalue().decode("utf-8-sig"))
-        )
-    )
-
-    reg_rows = list(
-        csv.DictReader(
-            io.StringIO(registrations_file.getvalue().decode("utf-8-sig"))
-        )
-    )
-
-    noshow_rows = list(
-        csv.DictReader(
-            io.StringIO(noshows_file.getvalue().decode("utf-8-sig"))
-        )
-    )
+    requests, req_delim = read_csv(requests_file)
+    reg_rows, reg_delim = read_csv(registrations_file)
+    noshow_rows, ns_delim = read_csv(noshows_file)
 
     if not requests:
-        st.error("DS_requests.csv is empty.")
+        st.error("DS_requests.csv appears to be empty.")
         st.stop()
 
+    st.write("Detected delimiters:")
+    st.write(
+        {
+            "Requests": req_delim,
+            "Registrations": reg_delim,
+            "No Shows": ns_delim,
+        }
+    )
+
+    st.write("First row of requests:")
+    st.write(requests[0])
+
     week_columns = [
-        c for c in requests[0].keys()
-        if c != "player"
+        c.strip()
+        for c in requests[0].keys()
+        if c.strip().lower() != "player"
     ]
 
     week = st.selectbox(
-        "Select week",
+        "Week",
         week_columns,
         index=len(week_columns) - 1,
     )
 
-    # -----------------------------
-    # Validate columns
-    # -----------------------------
-    for name, rows in [
-        ("Registrations", reg_rows),
-        ("No Shows", noshow_rows),
-    ]:
-        if not rows:
-            st.error(f"{name} file is empty.")
-            st.stop()
-
-        missing = [
-            c for c in week_columns
-            if c not in rows[0]
-        ]
-
-        if missing:
-            st.error(
-                f"{name} CSV is missing columns: {missing}"
-            )
-            st.stop()
-
     registered = {
-        row["player"]: row
+        row["player"].strip(): row
         for row in reg_rows
     }
 
     noshows = {
-        row["player"]: row
+        row["player"].strip(): row
         for row in noshow_rows
     }
 
     reg_weeks = [
-        c for c in reg_rows[0].keys()
-        if c != "player"
+        c.strip()
+        for c in reg_rows[0].keys()
+        if c.strip().lower() != "player"
     ]
 
-    # -----------------------------
-    # Eligible players
-    # -----------------------------
-    eligible = {
-        row["player"]
-        for row in requests
-        if row.get(week, "").strip().startswith("*")
-    }
-
-    st.success(f"{len(eligible)} eligible players found.")
-
-    # -----------------------------
-    # Calculate credits
-    # -----------------------------
     credits = {}
+
+    eligible = set()
+
+    for row in requests:
+        player = row["player"].strip()
+
+        if row.get(week, "").strip().startswith("*"):
+            eligible.add(player)
+
+    st.write(f"Eligible players: {len(eligible)}")
 
     for row in requests:
 
-        player = row["player"]
+        player = row["player"].strip()
+
         credits[player] = 0
 
         for current_week in week_columns:
@@ -151,39 +132,28 @@ if requests_file and registrations_file and noshows_file:
             if was_registered and was_noshow:
                 credits[player] -= 1
 
-    # -----------------------------
-    # Sub percentage
-    # -----------------------------
     def has_been_sub_pct(player):
 
-        weeks_to_check = [
-            w for w in reg_weeks
+        weeks = [
+            w
+            for w in reg_weeks
             if w != week
         ]
 
-        if not weeks_to_check:
+        if not weeks:
             return "0.0%"
 
-        player_reg = registered.get(player, {})
+        reg = registered.get(player, {})
 
-        double_star_count = sum(
+        subs = sum(
             1
-            for w in weeks_to_check
-            if player_reg.get(w, "").strip().startswith("**")
+            for w in weeks
+            if reg.get(w, "").strip().startswith("**")
         )
 
-        pct = (
-            double_star_count
-            / len(weeks_to_check)
-        ) * 100
+        return f"{100 * subs / len(weeks):.1f}%"
 
-        return f"{pct:.1f}%"
-
-    # -----------------------------
-    # Create output
-    # -----------------------------
     output = io.StringIO()
-
     writer = csv.writer(output)
 
     writer.writerow(
@@ -226,18 +196,14 @@ if requests_file and registrations_file and noshows_file:
 
         rows_written += 1
 
-    st.write(f"Rows written: **{rows_written}**")
+    st.write(f"Rows written: {rows_written}")
 
-    if rows_written == 0:
-        st.warning(
-            "No players matched the selected week. Check that the uploaded CSVs contain the expected data."
-        )
-    else:
+    if preview:
         st.dataframe(preview, use_container_width=True)
 
-        st.download_button(
-            "📥 Download CSV",
-            output.getvalue(),
-            file_name=f"DS_{week.replace(' ', '-')}.csv",
-            mime="text/csv",
-        )
+    st.download_button(
+        "Download CSV",
+        output.getvalue(),
+        file_name=f"DS_{week.replace(' ', '-')}.csv",
+        mime="text/csv",
+    )
