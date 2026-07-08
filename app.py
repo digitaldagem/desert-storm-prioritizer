@@ -49,7 +49,7 @@ if req_file and reg_file and ns_file and target_date:
         registered = {row["player"]: row for row in reg_rows}
         noshows = {row["player"]: row for row in csv.DictReader(ns_text)}
 
-        reg_weeks = [col for col in reg_rows.keys() if col != "player"] if reg_rows else []
+        reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
         # Players with '*' in the user-specified date column
         eligible = {
