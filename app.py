@@ -42,19 +42,10 @@ if req_file and reg_file and ns_file and target_date:
         raw_reg_rows = list(csv.DictReader(reg_lines))
         raw_ns_rows = list(csv.DictReader(ns_lines))
 
-        # --- DATA CLEANING BANNER: Strip hidden spaces from ALL columns and values ---
-        requests = []
-        for row in raw_requests:
-            requests.append({k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None})
-            
-        reg_rows = []
-        for row in raw_reg_rows:
-            reg_rows.append({k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None})
-            
-        ns_rows = []
-        for row in raw_ns_rows:
-            ns_rows.append({k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None})
-        # -----------------------------------------------------------------------------
+        # --- Data Cleaning: Strip whitespace from keys/values ---
+        requests = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_requests]
+        reg_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_reg_rows]
+        ns_rows = [{k.strip(): v.strip() if v else "" for k, v in row.items() if k is not None} for row in raw_ns_rows]
 
         # Verify header validation match
         if requests:
@@ -67,7 +58,7 @@ if req_file and reg_file and ns_file and target_date:
         registered = {row["player"]: row for row in reg_rows if "player" in row}
         noshows = {row["player"]: row for row in ns_rows if "player" in row}
         
-        # Grab target columns matrix cleanly
+        # Grab target columns matrix cleanly from index 0
         reg_weeks = [col for col in reg_rows[0].keys() if col != "player"] if reg_rows else []
 
         # Target players meeting asterisk criteria
@@ -101,6 +92,8 @@ if req_file and reg_file and ns_file and target_date:
 
         # Build final output matrix list
         output_rows = []
+        
+        # FIXED: Restored your exact lambda index [1] to sort correctly by points score
         for player, score in sorted(credits.items(), key=lambda x: x[1], reverse=True):
             if player in eligible:
                 sub_pct = has_been_sub_pct(player, registered, reg_weeks, clean_target_date)
@@ -108,7 +101,10 @@ if req_file and reg_file and ns_file and target_date:
 
         # Display results
         if not output_rows:
-            st.warning(f"⚠️ 0 players had a '*' in the '{clean_target_date}' column.")
+            st.warning(f"⚠️ 0 players matched the conditions for column '{clean_target_date}'.")
+            if requests:
+                st.write("**Debug View - Total Found Eligible Set:**", len(eligible))
+                st.write("**Debug View - Sample Eligible Names:**", list(eligible)[:5])
         else:
             st.success(f"🎉 Success! Found {len(output_rows)} eligible players.")
             
